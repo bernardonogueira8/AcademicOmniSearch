@@ -4,14 +4,13 @@ O **AcademicOmniSearch** é uma ferramenta de _Data Extraction_ e _Web Scraping_
 
 Inspirado na arquitetura do protótipo **ScraperCI**, o projeto expande a capacidade de busca para além da BRAPCI, integrando mecanismos modulares de automação de consultas às principais bases de dados nacionais e internacionais:
 
-- **BRAPCI** (Ciência da Informação - API REST v5 integrada)
-- **PubMed** (Ciências da Saúde e Biomedicina - NCBI E-utilities oficial integrada)
-- **ACM Digital Library** (Ciência da Computação - Parser HTML e fallback WAF)
-- **Scopus** (Multidisciplinar / Elsevier - Integração com Elsevier API)
-- **IEEE Xplore** (Engenharia Elétrica e Computação - Integração com IEEE Search API)
-- **Web of Science** & **ScienceDirect** (Fichas técnicas mapeadas em `API.md`)
-
----
+- **PubMed** (Ciências da Saúde e Biomedicina) _Funcionando_
+- **BRAPCI** (Ciência da Informação) _Em Andamento_
+- **ACM Digital Library** (Ciência da Computação) _Em Andamento_
+- **Scopus** (Multidisciplinar / Elsevier) _Em Andamento_
+- **IEEE Xplore** (Engenharia Elétrica e Computação) _Não Iniciado_
+- **Web of Science** _Não Iniciado_ 
+- **ScienceDirect** _Não Iniciado_
 
 ## 🚀 Funcionalidades
 
@@ -19,21 +18,17 @@ Inspirado na arquitetura do protótipo **ScraperCI**, o projeto expande a capaci
 - **Parametrização Flexível:** Busca por palavras-chave, título, autores, resumo ou texto completo.
 - **Recorte Temporal:** Definição de janelas de tempo personalizadas (ano inicial e final).
 - **Deduplicação Inteligente:** Remoção automática de títulos duplicados entre bases distintas.
-- **Exportação Padronizada:** Download direto dos metadados extraídos em arquivo `.csv` codificado em UTF-8 com BOM (`utf-8-sig`), garantindo acentuação perfeita no Microsoft Excel, Power BI, Python/Pandas e R.
+- **Exportação Padronizada:** Download direto dos metadados extraídos em arquivo `.xlsx`.
 - **Interface Interativa:** Dashboard web responsivo construído em Streamlit com métricas agregadas da busca.
 
----
 
 ## 🛠️ Tecnologias Utilizadas
 
 - **Linguagem:** Python (>= 3.10)
 - **Gerenciador de Pacotes:** [uv](https://docs.astral.sh/uv/) / pip
 - **Interface Web:** [Streamlit](https://streamlit.io/)
-- **Extração & Requisições:** Requests, BeautifulSoup4, APIs Oficiais (BRAPCI v5, NCBI Entrez E-utilities)
+- **Extração & Requisições:** Requests, BeautifulSoup4
 - **Manipulação de Dados:** Pandas
-- **Formato de Dados:** CSV (RFC 4180 / UTF-8 com BOM)
-
----
 
 ## 📂 Estrutura do Repositório
 
@@ -50,7 +45,7 @@ AcademicOmniSearch/
 ├── utils/
 │   ├── __init__.py           # Exportação dos utilitários
 │   ├── config.py             # Configurações globais, headers e colunas padrão
-│   └── data_export.py        # Normalização de schemas, métricas e exportação CSV
+│   └── data_export.py        # Normalização de schemas, métricas e exportação Excel (.xlsx)
 ├── docs/
 │   └── API.md                # Template e especificações completas das APIs
 ├── app.py                    # Aplicação Streamlit com orquestração multi-base
@@ -100,10 +95,6 @@ pip install .
 streamlit run app.py
 ```
 
-_(Opcional: Caso utilize as APIs oficiais da Elsevier/Scopus ou IEEE, crie um arquivo `.env` para gerenciar as chaves `SCOPUS_API_KEY` ou `IEEE_API_KEY`)._
-
----
-
 ## 🖥️ Como Executar
 
 A partir da raiz do projeto, execute:
@@ -115,11 +106,10 @@ streamlit run app.py
 Acesse localmente em seu navegador:
 `http://localhost:8501`
 
----
 
 ## 📊 Estrutura dos Dados Gerados
 
-O arquivo `.csv` exportado possui o seguinte padrão tabular obrigatório:
+O arquivo `.xlsx` (Excel) exportado possui o seguinte padrão tabular obrigatório:
 
 | Campo             | Descrição                                         | Exemplo |
 | :---------------- | :------------------------------------------------ | :--- |
