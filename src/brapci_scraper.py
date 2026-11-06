@@ -5,7 +5,6 @@ Utiliza a API oficial v5 JSON (https://cip.brapci.inf.br/api/brapci/search/v5).
 
 from typing import List, Dict, Any, Optional
 import requests
-import time
 import logging
 from src.base import BaseScraper, AcademicRecord
 from utils.config import DEFAULT_HEADERS, DEFAULT_TIMEOUT
@@ -55,30 +54,28 @@ class BrapciScraper(BaseScraper):
         max_por_base: Optional[int] = None,
         page_size: Optional[int] = None,
         collection: Optional[str] = None,
-        delay: float = 0.5,
         **kwargs
     ) -> List[Dict[str, Any]]:
         """
-        Executa a busca paginada na API v5 da BRAPCI e formata os resultados.
-        O limite de registros respeita max_por_base / page_size configurado.
+        Executa a busca direta na API v5 da BRAPCI e formata os resultados.
+        Na API v5 da BRAPCI, o parâmetro 'offset' define a quantidade total desejada (limite).
+        Uma única requisição otimizada evita disparos múltiplos em loop e bloqueios de WAF (HTTP 403).
         """
         self.validate_years(year_start, year_end)
         
         if not query or not query.strip():
             return []
 
-        # Determina o limite de registros
+        # Determina a quantidade de registros solicitada
         target_limit = (
             max_por_base
             if max_por_base is not None
             else (page_size if page_size is not None else (max_results if max_results is not None else self.page_size))
         )
+        target_limit = max(1, int(target_limit))
 
         field_code = self.FIELD_MAP.get(field.strip().lower(), "FL")
         collections_param = collection or self.DEFAULT_COLLECTIONS
-
-        records: List[Dict[str, Any]] = []
-        current_offset = 0
 
         session = requests.Session()
         session.headers.update(DEFAULT_HEADERS)
@@ -92,72 +89,59 @@ class BrapciScraper(BaseScraper):
             "Sec-Fetch-Site": "same-site",
         })
 
-        # Inicialização suave de sessão para contornar WAF em instâncias de nuvem (Streamlit Cloud / AWS)
+        params = {
+            "term": query.strip(),
+            "offset": str(target_limit),
+            "year_start": str(year_start),
+            "year_end": str(year_end),
+            "collection": collections_param,
+            "field": field_code
+        }
+
+        records: List[Dict[str, Any]] = []
+
         try:
-            session.get("https://brapci.inf.br/", timeout=4)
-        except Exception:
-            pass
-
-        while len(records) < target_limit:
-            params = {
-                "term": query.strip(),
-                "offset": str(current_offset),
-                "year_start": str(year_start),
-                "year_end": str(year_end),
-                "collection": collections_param,
-                "field": field_code
-            }
-
-            try:
+            response = session.get(self.BASE_URL, params=params, timeout=DEFAULT_TIMEOUT)
+            
+            # Se a resposta foi 403, tenta com fallback suave estabelecendo sessão
+            if response.status_code == 403:
+                logger.warning(f"BRAPCI API retornou status 403. Tentando autenticação de sessão inicial...")
+                session.get("https://brapci.inf.br/", timeout=5)
                 response = session.get(self.BASE_URL, params=params, timeout=DEFAULT_TIMEOUT)
-                if response.status_code != 200:
-                    logger.warning(f"BRAPCI API retornou status {response.status_code} no offset {current_offset}.")
-                    break
 
-                payload = response.json()
-                if not isinstance(payload, dict):
-                    break
+            if response.status_code != 200:
+                logger.warning(f"BRAPCI API retornou status {response.status_code}.")
+                return []
 
-                works = payload.get("works", [])
-                total_reported = payload.get("total", 0)
+            payload = response.json()
+            if not isinstance(payload, dict):
+                return []
 
-                if not works:
-                    break
+            works = payload.get("works", [])
+            for work in works[:target_limit]:
+                data = work.get("data", {})
+                work_id = str(work.get("id") or data.get("ID", "")).strip()
+                
+                title = data.get("TITLE") or "Sem título"
+                authors = data.get("AUTHORS") or "Autor não informado"
+                journal = data.get("JOURNAL") or data.get("LEGEND") or "Revista não informada"
+                year = str(work.get("year") or "").strip()
+                keywords = data.get("KEYWORDS") or ""
+                link = f"https://brapci.inf.br/v/{work_id}" if work_id else ""
 
-                for work in works:
-                    data = work.get("data", {})
-                    work_id = str(work.get("id") or data.get("ID", "")).strip()
-                    
-                    title = data.get("TITLE") or "Sem título"
-                    authors = data.get("AUTHORS") or "Autor não informado"
-                    journal = data.get("JOURNAL") or data.get("LEGEND") or "Revista não informada"
-                    year = str(work.get("year") or "").strip()
-                    keywords = data.get("KEYWORDS") or ""
-                    link = f"https://brapci.inf.br/v/{work_id}" if work_id else ""
+                record = AcademicRecord(
+                    title=title.strip(),
+                    link_pub=link,
+                    autor=authors.strip(),
+                    revista_fonte=journal.strip(),
+                    ano=year,
+                    base=self.name,
+                    palavras_chave=keywords.strip(),
+                    id_origem=work_id
+                )
+                records.append(record.to_dict())
 
-                    record = AcademicRecord(
-                        title=title.strip(),
-                        link_pub=link,
-                        autor=authors.strip(),
-                        revista_fonte=journal.strip(),
-                        ano=year,
-                        base=self.name,
-                        palavras_chave=keywords.strip(),
-                        id_origem=work_id
-                    )
-                    records.append(record.to_dict())
+        except Exception as e:
+            logger.error(f"Erro ao consultar BRAPCI: {e}")
 
-                    if len(records) >= target_limit:
-                        break
-
-                current_offset += len(works)
-                if current_offset >= total_reported or len(works) == 0:
-                    break
-
-                time.sleep(delay)
-
-            except Exception as e:
-                logger.error(f"Erro ao consultar BRAPCI: {e}")
-                break
-
-        return records[:target_limit]
+        return records
