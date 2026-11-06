@@ -40,9 +40,10 @@ class BrapciScraper(BaseScraper):
     # JA = Revistas Brasileiras, JE = Revistas Estrangeiras, EV = Anais de Eventos, BK = Livros e Capítulos
     DEFAULT_COLLECTIONS = "JA,JE,EV,BK"
 
-    def __init__(self, max_por_base: Optional[int] = 10):
+    def __init__(self, max_por_base: Optional[int] = None, page_size: Optional[int] = None):
         super().__init__(name="BRAPCI", is_api=True, requires_auth=False)
-        self.page_size = max_por_base
+        self.page_size = max_por_base if max_por_base is not None else (page_size if page_size is not None else 20)
+        self.max_por_base = self.page_size
 
     def search(
         self,
@@ -52,8 +53,9 @@ class BrapciScraper(BaseScraper):
         field: str = "Todos",
         max_results: Optional[int] = None,
         max_por_base: Optional[int] = None,
+        page_size: Optional[int] = None,
         collection: Optional[str] = None,
-        delay: float = 0.3,
+        delay: float = 0.5,
         **kwargs
     ) -> List[Dict[str, Any]]:
         """
@@ -65,19 +67,41 @@ class BrapciScraper(BaseScraper):
         if not query or not query.strip():
             return []
 
-        offset = max_por_base
+        # Determina o limite de registros
+        target_limit = (
+            max_por_base
+            if max_por_base is not None
+            else (page_size if page_size is not None else (max_results if max_results is not None else self.page_size))
+        )
 
         field_code = self.FIELD_MAP.get(field.strip().lower(), "FL")
         collections_param = collection or self.DEFAULT_COLLECTIONS
 
         records: List[Dict[str, Any]] = []
+        current_offset = 0
+
         session = requests.Session()
         session.headers.update(DEFAULT_HEADERS)
+        session.headers.update({
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": "https://brapci.inf.br/",
+            "Origin": "https://brapci.inf.br",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site",
+        })
 
-        while len(records) < offset:
+        # Inicialização suave de sessão para contornar WAF em instâncias de nuvem (Streamlit Cloud / AWS)
+        try:
+            session.get("https://brapci.inf.br/", timeout=4)
+        except Exception:
+            pass
+
+        while len(records) < target_limit:
             params = {
                 "term": query.strip(),
-                "offset": str(offset),
+                "offset": str(current_offset),
                 "year_start": str(year_start),
                 "year_end": str(year_end),
                 "collection": collections_param,
@@ -87,7 +111,7 @@ class BrapciScraper(BaseScraper):
             try:
                 response = session.get(self.BASE_URL, params=params, timeout=DEFAULT_TIMEOUT)
                 if response.status_code != 200:
-                    logger.warning(f"BRAPCI API retornou status {response.status_code} no offset {offset}.")
+                    logger.warning(f"BRAPCI API retornou status {response.status_code} no offset {current_offset}.")
                     break
 
                 payload = response.json()
@@ -123,11 +147,11 @@ class BrapciScraper(BaseScraper):
                     )
                     records.append(record.to_dict())
 
-                    if len(records) >= offset:
+                    if len(records) >= target_limit:
                         break
 
-                offset += len(works)
-                if offset >= total_reported or len(works) == 0:
+                current_offset += len(works)
+                if current_offset >= total_reported or len(works) == 0:
                     break
 
                 time.sleep(delay)
@@ -136,4 +160,4 @@ class BrapciScraper(BaseScraper):
                 logger.error(f"Erro ao consultar BRAPCI: {e}")
                 break
 
-        return records[:offset]
+        return records[:target_limit]

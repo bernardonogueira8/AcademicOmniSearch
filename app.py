@@ -120,20 +120,19 @@ termo_busca = st.text_input(
 with st.container():  
     # Linha A: Seleção de Bases de Dados
     available_bases = {
-        "BRAPCI (Ciência da Informação - API v5)": "brapci",
-        "PubMed (Saúde & Biomédica - NCBI API)": "pubmed",
-        "ACM Digital Library (Computação - HTML/Dump)": "acm",
-        "IEEE Xplore (Engenharia - API Oficial)": "ieee",
-        "Scopus (Elsevier - API Oficial)": "scopus"
+        "BRAPCI (Ciência da Informação)": "brapci",
+        "PubMed (Saúde & Biomédica)": "pubmed",
+        "ACM Digital Library (Computação)": "acm",
+        "IEEE Xplore (Engenharia)": "ieee",
+        "Scopus (Elsevier)": "scopus"
     }
 
     selected_labels = st.multiselect(
         "Bases de Dados Alvo",
         options=list(available_bases.keys()),
         default=[
-            "BRAPCI (Ciência da Informação - API v5)",
-            "PubMed (Saúde & Biomédica - NCBI API)",
-            "ACM Digital Library (Computação - HTML/Dump)"
+            "BRAPCI (Ciência da Informação)",
+            "PubMed (Saúde & Biomédica)"
         ],
         help="Escolha as bases para busca agregada e unificada."
     )
@@ -171,7 +170,7 @@ with st.container():
     with col_opt1:
         deduplicar = st.checkbox("Remover duplicatas exatas por título", value=True)
     with col_opt2:
-        botao_pesquisar = st.button("Iniciar Pesquisa", type="primary", use_container_width=True)
+        botao_pesquisar = st.button("Iniciar Pesquisa", type="primary", width="stretch")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -309,7 +308,7 @@ if "dataset" in st.session_state:
                 data=excel_bytes,
                 file_name=f"metadata_{nome_arquivo}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width="stretch"
             )
 
         
@@ -328,7 +327,7 @@ if "dataset" in st.session_state:
         # 5. Tabela de Metadados Padronizada (Foco Central da UI)
         st.dataframe(
             df_view,
-            use_container_width=True,
+            width="stretch",
             height=460,
             column_config={
                 "Link Pub": st.column_config.LinkColumn(
