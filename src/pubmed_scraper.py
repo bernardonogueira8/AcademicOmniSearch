@@ -146,12 +146,25 @@ class PubmedScraper(BaseScraper):
                     year_match = re.search(r"\b(19\d{2}|20\d{2})\b", pubdate)
                     ano = year_match.group(1) if year_match else "Não informado"
 
-                    # DOI
+                    # Extração de DOI e PMCID (PMC Open Access)
                     doi = ""
+                    pmcid = ""
                     for article_id in doc.get("articleids", []):
-                        if article_id.get("idtype") == "doi":
+                        id_type = str(article_id.get("idtype", "")).lower()
+                        if id_type == "doi" and not doi:
                             doi = article_id.get("value", "")
-                            break
+                        elif id_type == "pmc" and not pmcid:
+                            pmcid = article_id.get("value", "")
+
+                    # Prioriza acesso aberto no PMC se disponível, senão DOI, senão PubMed
+                    if pmcid:
+                        link_pub = f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/"
+                    elif doi:
+                        link_pub = f"https://doi.org/{doi}"
+                    else:
+                        link_pub = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+
+                    id_display = f"PMID:{pmid}" + (f" | {pmcid}" if pmcid else "")
 
                     record = AcademicRecord(
                         title=title.strip(),
@@ -161,7 +174,7 @@ class PubmedScraper(BaseScraper):
                         ano=ano,
                         base=self.name,
                         doi=doi,
-                        id_origem=pmid
+                        id_origem=id_display
                     )
                     records.append(record.to_dict())
 

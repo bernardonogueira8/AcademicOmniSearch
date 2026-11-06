@@ -40,11 +40,9 @@ class BrapciScraper(BaseScraper):
     # JA = Revistas Brasileiras, JE = Revistas Estrangeiras, EV = Anais de Eventos, BK = Livros e Capítulos
     DEFAULT_COLLECTIONS = "JA,JE,EV,BK"
 
-    def __init__(self, max_por_base: Optional[int] = None, page_size: Optional[int] = None):
+    def __init__(self, max_por_base: Optional[int] = 10):
         super().__init__(name="BRAPCI", is_api=True, requires_auth=False)
-        # O page_size é definido por max_por_base (ou page_size explicitado)
-        self.page_size = max_por_base if max_por_base is not None else (page_size if page_size is not None else 10)
-        self.max_por_base = self.page_size
+        self.page_size = max_por_base
 
     def search(
         self,
@@ -54,7 +52,6 @@ class BrapciScraper(BaseScraper):
         field: str = "Todos",
         max_results: Optional[int] = None,
         max_por_base: Optional[int] = None,
-        page_size: Optional[int] = None,
         collection: Optional[str] = None,
         delay: float = 0.3,
         **kwargs
@@ -68,23 +65,16 @@ class BrapciScraper(BaseScraper):
         if not query or not query.strip():
             return []
 
-        # Determina o limite de registros respeitando max_por_base e page_size
-        effective_limit = (
-            max_por_base
-            if max_por_base is not None
-            else (page_size if page_size is not None else (max_results if max_results is not None else self.page_size))
-        )
+        offset = max_por_base
 
         field_code = self.FIELD_MAP.get(field.strip().lower(), "FL")
         collections_param = collection or self.DEFAULT_COLLECTIONS
 
         records: List[Dict[str, Any]] = []
-        offset = 0
-
         session = requests.Session()
         session.headers.update(DEFAULT_HEADERS)
 
-        while len(records) < effective_limit:
+        while len(records) < offset:
             params = {
                 "term": query.strip(),
                 "offset": str(offset),
@@ -133,7 +123,7 @@ class BrapciScraper(BaseScraper):
                     )
                     records.append(record.to_dict())
 
-                    if len(records) >= effective_limit:
+                    if len(records) >= offset:
                         break
 
                 offset += len(works)
@@ -146,4 +136,4 @@ class BrapciScraper(BaseScraper):
                 logger.error(f"Erro ao consultar BRAPCI: {e}")
                 break
 
-        return records[:effective_limit]
+        return records[:offset]
