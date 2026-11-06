@@ -4,6 +4,7 @@ Utiliza a API oficial v5 JSON (https://cip.brapci.inf.br/api/brapci/search/v5).
 """
 
 from typing import List, Dict, Any, Optional
+import os
 import requests
 import logging
 from src.base import BaseScraper, AcademicRecord
@@ -39,10 +40,11 @@ class BrapciScraper(BaseScraper):
     # JA = Revistas Brasileiras, JE = Revistas Estrangeiras, EV = Anais de Eventos, BK = Livros e Capítulos
     DEFAULT_COLLECTIONS = "JA,JE,EV,BK"
 
-    def __init__(self, max_por_base: Optional[int] = None, page_size: Optional[int] = None):
+    def __init__(self, max_por_base: Optional[int] = None, page_size: Optional[int] = None, proxy: Optional[str] = None):
         super().__init__(name="BRAPCI", is_api=True, requires_auth=False)
         self.page_size = max_por_base if max_por_base is not None else (page_size if page_size is not None else 20)
         self.max_por_base = self.page_size
+        self.proxy = proxy
 
     def search(
         self,
@@ -100,6 +102,12 @@ class BrapciScraper(BaseScraper):
         self.logs = []
         self.log(f"Iniciando busca por '{query}' (Janela: {year_start}-{year_end}, Campo: {field}, Limite: {target_limit})")
 
+        # Suporte a Proxy configurado via Secrets ou Variável de Ambiente (necessário apenas em Cloud/AWS)
+        proxy_url = kwargs.get("proxy") or self.proxy or os.getenv("BRAPCI_PROXY") or os.getenv("HTTPS_PROXY")
+        if proxy_url:
+            session.proxies = {"http": proxy_url, "https": proxy_url}
+            self.log(f"Utilizando proxy configurado para contornar restrições de nuvem: {proxy_url.split('@')[-1]}")
+
         # Inicialização suave de sessão na raiz da CIP para adquirir o cookie 'ci_session'
         try:
             r_init = session.get("https://cip.brapci.inf.br/", timeout=5)
@@ -127,6 +135,15 @@ class BrapciScraper(BaseScraper):
             if response.status_code == 403 or response.status_code != 200:
                 body_preview = response.text[:250].replace("\n", " ").strip()
                 headers_summary = f"Server={response.headers.get('Server', 'N/A')}, Content-Type={response.headers.get('Content-Type', 'N/A')}"
+                
+                # Identifica se é bloqueio institucional de Datacenter (Apache na UFPR rejeitando AWS IP)
+                if response.status_code == 403 and "Apache Server at cip.brapci.inf.br" in response.text:
+                    self.log(
+                        "AVISO CRÍTICO: O firewall do Apache da UFPR (cip.brapci.inf.br) bloqueou o IP deste servidor em nuvem (AWS/Streamlit Cloud). "
+                        "Esta restrição afeta apenas instâncias de nuvem. Localmente ou com proxy a coleta funciona normalmente.",
+                        level="WARNING"
+                    )
+
                 self.log(
                     f"AVISO: API v5 retornou Status {response.status_code} ({response.reason}). Headers: [{headers_summary}]. Resposta: {body_preview}",
                     level="WARNING"
@@ -143,8 +160,13 @@ class BrapciScraper(BaseScraper):
 
             if response.status_code != 200:
                 body_err = response.text[:250].replace("\n", " ").strip()
-                self.log(f"ERRO: BRAPCI API retornou status HTTP {response.status_code} ({response.reason}). Resposta: {body_err}", level="ERROR")
-                self.last_status = f"Erro HTTP {response.status_code}"
+                is_cloud_block = response.status_code == 403 and "Apache Server at cip.brapci.inf.br" in response.text
+                if is_cloud_block:
+                    self.last_status = "Bloqueio de IP da Nuvem (AWS/UFPR)"
+                    self.log("ERRO: Servidor da UFPR bloqueou o IP da AWS (Streamlit Cloud). Execute localmente para usar a BRAPCI.", level="ERROR")
+                else:
+                    self.last_status = f"Erro HTTP {response.status_code}"
+                    self.log(f"ERRO: BRAPCI API retornou status HTTP {response.status_code} ({response.reason}). Resposta: {body_err}", level="ERROR")
                 return []
 
             try:

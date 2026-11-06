@@ -202,9 +202,16 @@ def executar_busca_multibase(
     progress_bar = st.progress(0)
     status_text = st.empty()
 
+    # Verificação de proxy opcional em st.secrets
+    proxy_val = None
+    try:
+        proxy_val = st.secrets.get("BRAPCI_PROXY")
+    except Exception:
+        pass
+
     # Instanciação dos scrapers com passagem do max_por_base para o brapci
     scrapers_map = {
-        "brapci": BrapciScraper(max_por_base=max_reg),
+        "brapci": BrapciScraper(max_por_base=max_reg, proxy=proxy_val),
         "pubmed": PubmedScraper(),
         "acm": AcmScraper(local_html_path="test/app.html"),
         "ieee": IeeeScraper(),
@@ -407,6 +414,22 @@ if "dataset" in st.session_state:
                             """,
                             unsafe_allow_html=True
                         )
+
+            # Alerta explicativo caso haja bloqueio de datacenter/cloud na BRAPCI
+            brapci_data = bases_info.get("BRAPCI", {})
+            if "Bloqueio de IP da Nuvem" in brapci_data.get("status", "") or any("cip.brapci.inf.br Port 443" in str(log) for log in all_logs):
+                st.markdown(
+                    """
+                    <div style="background-color: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 12px 16px; margin: 12px 0; font-size: 0.88rem; color: #92400e;">
+                        <strong style="color: #b45309;">💡 Nota Técnica sobre a BRAPCI em Nuvem (Streamlit Cloud):</strong>
+                        <p style="margin: 4px 0 0 0; line-height: 1.45;">
+                            O servidor Apache da UFPR (<code>cip.brapci.inf.br</code>) bloqueia conexões diretas vindas de datacenters da <strong>Amazon AWS</strong> (onde o Streamlit Cloud executa seus containers).<br>
+                            O scraper e o código estão 100% corretos: para pesquisar na BRAPCI sem restrições, <strong>execute a aplicação localmente no seu computador</strong> (<code>uv run streamlit run app.py</code>) onde seu IP residencial/brasileiro é aceito sem bloqueio, ou adicione um proxy em <code>st.secrets["BRAPCI_PROXY"]</code>.
+                        </p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
             if all_logs:
                 log_content = "\n".join(all_logs)
