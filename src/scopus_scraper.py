@@ -36,15 +36,19 @@ class ScopusScraper(BaseScraper):
         max_results: int = 50,
         **kwargs
     ) -> List[Dict[str, Any]]:
+        self.logs = []
         self.validate_years(year_start, year_end)
 
         if not self.api_key:
-            logger.warning(
-                "Scopus requer chave de API oficial (SCOPUS_API_KEY) e convênio institucional "
-                "cadastrado em https://dev.elsevier.com/."
+            msg = (
+                "Chave SCOPUS_API_KEY não configurada nas variáveis de ambiente. "
+                "Para consultar o Scopus via API oficial, registre sua chave institucional em https://dev.elsevier.com/."
             )
+            self.log(msg, level="WARNING")
+            self.last_status = "Chave SCOPUS_API_KEY ausente"
             return []
 
+        self.log(f"Iniciando busca Scopus: '{query}' (Janela: {year_start}-{year_end}, Limite: {max_results})")
         # Formatação de query Scopus Search (ex: TITLE-ABS-KEY(...) AND PUBYEAR > ... AND PUBYEAR < ...)
         scopus_query = f"{query.strip()} AND PUBYEAR AFT {year_start - 1} AND PUBYEAR BEF {year_end + 1}"
         
@@ -61,9 +65,11 @@ class ScopusScraper(BaseScraper):
         }
 
         try:
+            self.log(f"Consultando Scopus Search API: {self.API_URL}")
             response = requests.get(self.API_URL, params=params, headers=headers, timeout=DEFAULT_TIMEOUT)
             if response.status_code != 200:
-                logger.error(f"Erro na API Scopus: HTTP {response.status_code}")
+                self.log(f"ERRO: API Scopus retornou HTTP {response.status_code}: {response.text[:200]}", level="ERROR")
+                self.last_status = f"Erro HTTP {response.status_code}"
                 return []
 
             data = response.json()
@@ -100,9 +106,12 @@ class ScopusScraper(BaseScraper):
                 )
                 records.append(rec.to_dict())
 
+            self.last_status = f"Sucesso: {len(records)} registros"
+            self.log(f"Scopus retornou {len(records)} artigos.")
             return records
 
         except Exception as e:
-            logger.error(f"Exceção ao consultar Scopus: {e}")
+            self.log(f"ERRO ao consultar Scopus: {type(e).__name__}: {e}", level="ERROR")
+            self.last_status = f"Erro {type(e).__name__}"
             return []
 

@@ -34,15 +34,19 @@ class IeeeScraper(BaseScraper):
         max_results: int = 50,
         **kwargs
     ) -> List[Dict[str, Any]]:
+        self.logs = []
         self.validate_years(year_start, year_end)
 
         if not self.api_key:
-            logger.warning(
-                "IEEE Xplore requer uma chave de API oficial (IEEE_API_KEY) "
-                "cadastrada no portal https://developer.ieee.org/ ou uso de navegador headless institucional."
+            msg = (
+                "Chave de API oficial (IEEE_API_KEY) não encontrada nas variáveis de ambiente. "
+                "Cadastre uma chave gratuita no portal https://developer.ieee.org/ para buscas automatizadas."
             )
+            self.log(msg, level="WARNING")
+            self.last_status = "Chave IEEE_API_KEY ausente"
             return []
 
+        self.log(f"Iniciando busca IEEE Xplore: '{query}' (Janela: {year_start}-{year_end}, Limite: {max_results})")
         params = {
             "apikey": self.api_key,
             "querytext": query.strip(),
@@ -53,9 +57,11 @@ class IeeeScraper(BaseScraper):
         }
 
         try:
+            self.log(f"Consultando IEEE API: {self.API_URL}")
             response = requests.get(self.API_URL, params=params, headers=DEFAULT_HEADERS, timeout=DEFAULT_TIMEOUT)
             if response.status_code != 200:
-                logger.error(f"Erro na IEEE API: HTTP {response.status_code}")
+                self.log(f"ERRO: IEEE API retornou HTTP {response.status_code}: {response.text[:200]}", level="ERROR")
+                self.last_status = f"Erro HTTP {response.status_code}"
                 return []
 
             data = response.json()
@@ -86,9 +92,12 @@ class IeeeScraper(BaseScraper):
                 )
                 records.append(rec.to_dict())
 
+            self.last_status = f"Sucesso: {len(records)} registros"
+            self.log(f"IEEE Xplore retornou {len(records)} artigos.")
             return records
 
         except Exception as e:
-            logger.error(f"Exceção ao consultar IEEE Xplore: {e}")
+            self.log(f"ERRO: Exceção ao consultar IEEE Xplore: {type(e).__name__}: {e}", level="ERROR")
+            self.last_status = f"Erro {type(e).__name__}"
             return []
 

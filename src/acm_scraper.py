@@ -166,6 +166,9 @@ class AcmScraper(BaseScraper):
         if not query or not query.strip():
             return []
 
+        self.logs = []
+        self.log(f"Iniciando busca ACM: '{query}' (Janela: {year_start}-{year_end}, Campo: {field})")
+
         field_param = self.FIELD_MAP.get(field.strip().lower(), "AllField")
         params = {
             field_param: query.strip(),
@@ -186,28 +189,38 @@ class AcmScraper(BaseScraper):
         })
 
         try:
+            self.log(f"Requisitando ACM DL: {self.BASE_URL} com params: {params}")
             response = session.get(self.BASE_URL, params=params, timeout=DEFAULT_TIMEOUT)
             
             # Se a resposta contém resultados HTML
             if response.status_code == 200 and ".issue-item" in response.text:
-                return self.parse_html(response.text, max_results=max_results)
+                results = self.parse_html(response.text, max_results=max_results)
+                self.last_status = f"Sucesso: {len(results)} registros"
+                self.log(f"ACM retornou HTTP 200 com {len(results)} artigos parseados.")
+                return results
             
             # Tratamento de proteção WAF / Cloudflare
             if response.status_code in [403, 503] or "cloudflare" in response.text.lower() or "challenge" in response.text.lower():
-                logger.warning(
-                    "ACM Digital Library ativou proteção WAF/Cloudflare (HTTP 403/503). "
-                    "Para raspagem automatizada contínua da ACM, recomenda-se uso de Playwright "
-                    "ou ingestão de dumps HTML salvos pelo pesquisador."
+                self.log(
+                    f"AVISO: Proteção WAF/Cloudflare detectada (HTTP {response.status_code}). Servidor bloqueou requisição automatizada direta.",
+                    level="WARNING"
                 )
                 if use_local_file_if_blocked and self.local_html_path and os.path.exists(self.local_html_path):
-                    logger.info(f"Carregando dump local de fallback '{self.local_html_path}'...")
-                    return self.parse_file(self.local_html_path, max_results=max_results)
+                    self.log(f"Recorrendo ao arquivo HTML de dump local: '{self.local_html_path}'...")
+                    results = self.parse_file(self.local_html_path, max_results=max_results)
+                    self.last_status = f"Fallback Local: {len(results)} registros"
+                    return results
+                else:
+                    self.last_status = f"Bloqueio WAF (HTTP {response.status_code})"
+                    self.log("Sem dump HTML local configurado para ACM.", level="WARNING")
                 
             return []
 
         except Exception as e:
-            logger.error(f"Erro na requisição ACM: {e}")
+            self.log(f"ERRO ao consultar ACM: {type(e).__name__}: {e}", level="ERROR")
             if use_local_file_if_blocked and self.local_html_path and os.path.exists(self.local_html_path):
+                self.log(f"Recorrendo ao arquivo local: {self.local_html_path}")
                 return self.parse_file(self.local_html_path, max_results=max_results)
+            self.last_status = f"Erro {type(e).__name__}"
             return []
 

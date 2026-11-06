@@ -72,7 +72,10 @@ class PubmedScraper(BaseScraper):
         if not query or not query.strip():
             return []
 
+        self.logs = []
+        self.log(f"Iniciando busca PubMed com query: '{query}' (Janela: {year_start}-{year_end}, Campo: {field}, Limite: {max_results})")
         formatted_term = self._build_query_term(query, field, year_start, year_end)
+        self.log(f"Expressão formatada MeSH: {formatted_term}")
         session = requests.Session()
         session.headers.update(DEFAULT_HEADERS)
 
@@ -89,14 +92,20 @@ class PubmedScraper(BaseScraper):
             esearch_params["api_key"] = self.api_key
 
         try:
+            self.log(f"Consultando esearch.fcgi...")
             r_search = session.get(self.ESEARCH_URL, params=esearch_params, timeout=DEFAULT_TIMEOUT)
             if r_search.status_code != 200:
-                logger.error(f"Erro no esearch PubMed: HTTP {r_search.status_code}")
+                self.log(f"ERRO: esearch retornou HTTP {r_search.status_code}: {r_search.text[:200]}", level="ERROR")
+                self.last_status = f"Erro HTTP {r_search.status_code}"
                 return []
 
             search_json = r_search.json()
             id_list = search_json.get("esearchresult", {}).get("idlist", [])
+            total_count = search_json.get("esearchresult", {}).get("count", 0)
+            self.log(f"esearch retornou com sucesso: {total_count} artigos totais na base, {len(id_list)} IDs selecionados para sumário.")
+
             if not id_list:
+                self.last_status = "0 registros encontrados"
                 return []
 
             # 2. Esummary em lote (chunked)
@@ -117,8 +126,10 @@ class PubmedScraper(BaseScraper):
                 if self.api_key:
                     esummary_params["api_key"] = self.api_key
 
+                self.log(f"Consultando esummary.fcgi para lote de {len(chunk)} PMIDs...")
                 r_sum = session.get(self.ESUMMARY_URL, params=esummary_params, timeout=DEFAULT_TIMEOUT)
                 if r_sum.status_code != 200:
+                    self.log(f"AVISO: Falha no esummary para lote: HTTP {r_sum.status_code}", level="WARNING")
                     continue
 
                 sum_data = r_sum.json().get("result", {})
@@ -184,9 +195,12 @@ class PubmedScraper(BaseScraper):
                 if len(records) >= max_results:
                     break
 
+            self.last_status = f"Sucesso: {len(records)} registros"
+            self.log(f"PubMed concluído: {len(records)} registros processados com sucesso.")
             return records
 
         except Exception as e:
-            logger.error(f"Exceção ao consultar PubMed: {e}")
+            self.log(f"ERRO: Exceção inesperada no PubMed: {type(e).__name__}: {e}", level="ERROR")
+            self.last_status = f"Erro {type(e).__name__}"
             return []
 

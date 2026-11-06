@@ -6,7 +6,15 @@ Interface com design system inspirado na Resend (dark-first, artesanal, minimali
 import streamlit as st
 import pandas as pd
 import time
+import logging
 from typing import Dict, List, Any
+
+# Configuração de logging estruturado para console e Streamlit Cloud
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s"
+)
+logger = logging.getLogger("AcademicOmniSearch.App")
 
 from src import (
     BrapciScraper,
@@ -184,8 +192,12 @@ def executar_busca_multibase(
     ano_ate: int,
     campo: str,
     max_reg: int
-) -> List[Dict[str, Any]]:
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
     todos_registros: List[Dict[str, Any]] = []
+    diagnostics: Dict[str, Any] = {
+        "bases": {},
+        "all_logs": []
+    }
 
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -216,7 +228,21 @@ def executar_busca_multibase(
                 max_por_base=max_reg
             )
             todos_registros.extend(records)
+            diagnostics["bases"][scraper.name] = {
+                "status": getattr(scraper, "last_status", f"Concluído ({len(records)} registros)"),
+                "count": len(records),
+                "logs": getattr(scraper, "logs", [])
+            }
+            diagnostics["all_logs"].extend(getattr(scraper, "logs", []))
         except Exception as e:
+            err_msg = f"Exceção inesperada: {type(e).__name__}: {e}"
+            logger.error(f"Erro em {scraper.name}: {err_msg}")
+            diagnostics["bases"][scraper.name] = {
+                "status": f"Falha ({type(e).__name__})",
+                "count": 0,
+                "logs": [f"[{scraper.name}] {err_msg}"]
+            }
+            diagnostics["all_logs"].append(f"[{scraper.name}] {err_msg}")
             st.toast(f"Aviso em {scraper.name}: {e}", icon="⚠️")
 
         progress_bar.progress((idx + 1) / total_bases)
@@ -225,7 +251,7 @@ def executar_busca_multibase(
     status_text.empty()
     progress_bar.empty()
 
-    return todos_registros
+    return todos_registros, diagnostics
 
 
 # --- Processamento da Ação de Busca ---
@@ -238,7 +264,7 @@ if botao_pesquisar:
         st.error(f"Ano inicial ({ano_inicial}) maior que o ano final ({ano_final}).")
     else:
         with st.spinner("Extraindo metadados das bases..."):
-            raw_records = executar_busca_multibase(
+            raw_records, diagnostics = executar_busca_multibase(
                 termo=termo_busca,
                 bases=selected_bases,
                 ano_de=ano_inicial,
@@ -254,6 +280,7 @@ if botao_pesquisar:
 
         st.session_state["dataset"] = df
         st.session_state["termo_pesquisado"] = termo_busca
+        st.session_state["diagnostics"] = diagnostics
 
 
 # --- 4. Exibição Minimalista de Métricas & Tabela Padronizada ---
@@ -348,8 +375,41 @@ if "dataset" in st.session_state:
             """
             <div style="background-color: #ffffff; border: 1px solid #e4e4e7; border-radius: 8px; padding: 28px; text-align: center; color: #71717a; margin-top: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
                 <p style="margin: 0; font-size: 0.95rem; color: #09090b; font-weight: 500;">Nenhum metadado retornado com os parâmetros selecionados.</p>
-                <p style="margin: 4px 0 0 0; font-size: 0.85rem; color: #71717a;">Tente ampliar a janela temporal ou utilizar palavras-chave mais abrangentes.</p>
+                <p style="margin: 4px 0 0 0; font-size: 0.85rem; color: #71717a;">Verifique os logs detalhados abaixo para identificar se alguma base retornou bloqueio ou restrição de rede.</p>
             </div>
             """,
             unsafe_allow_html=True
         )
+
+    # 6. Painel de Diagnóstico Técnico e Logs das Bases
+    if "diagnostics" in st.session_state:
+        diag = st.session_state["diagnostics"]
+        all_logs = diag.get("all_logs", [])
+        bases_info = diag.get("bases", {})
+
+        with st.expander("🔍 Logs e Diagnóstico Detalhado das Requisições", expanded=df_atual.empty):
+            # Status cards das bases consultadas
+            if bases_info:
+                cols = st.columns(len(bases_info))
+                for idx, (b_name, b_data) in enumerate(bases_info.items()):
+                    with cols[idx]:
+                        b_status = b_data.get("status", "")
+                        is_ok = "Sucesso" in b_status or b_data.get("count", 0) > 0
+                        color = "#10b981" if is_ok else "#ef4444"
+                        st.markdown(
+                            f"""
+                            <div style="background-color: #ffffff; border: 1px solid #e4e4e7; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                <div style="font-size: 11px; text-transform: uppercase; color: #71717a; font-weight: 600;">{b_name}</div>
+                                <div style="font-size: 13px; font-weight: 500; color: {color}; margin-top: 2px;">
+                                    {b_status}
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+
+            if all_logs:
+                log_content = "\n".join(all_logs)
+                st.code(log_content, language="text")
+            else:
+                st.caption("Nenhum log gerado na execução.")

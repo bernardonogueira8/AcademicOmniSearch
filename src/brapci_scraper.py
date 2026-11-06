@@ -97,11 +97,16 @@ class BrapciScraper(BaseScraper):
             "Sec-Fetch-Site": "same-site",
         })
 
+        self.logs = []
+        self.log(f"Iniciando busca por '{query}' (Janela: {year_start}-{year_end}, Campo: {field}, Limite: {target_limit})")
+
         # Inicialização suave de sessão na raiz da CIP para adquirir o cookie 'ci_session'
         try:
-            session.get("https://cip.brapci.inf.br/", timeout=5)
-        except Exception:
-            pass
+            r_init = session.get("https://cip.brapci.inf.br/", timeout=5)
+            cookies_acquired = list(session.cookies.keys())
+            self.log(f"Priming de sessão em https://cip.brapci.inf.br/ -> Status: {r_init.status_code}, Cookies: {cookies_acquired}")
+        except Exception as e_init:
+            self.log(f"Aviso ao inicializar sessão em https://cip.brapci.inf.br/: {e_init}", level="WARNING")
 
         params = {
             "term": query.strip(),
@@ -115,27 +120,50 @@ class BrapciScraper(BaseScraper):
         records: List[Dict[str, Any]] = []
 
         try:
+            self.log(f"Requisitando API v5: {self.BASE_URL} com params: {params}")
             response = session.get(self.BASE_URL, params=params, timeout=DEFAULT_TIMEOUT)
             
-            # Se a API v5 retornar 403 ou erro de WAF, executa fallback para a API v1 da CIP
+            # Se a API v5 retornar 403 ou erro de WAF, registra detalhe e executa fallback para a API v1
             if response.status_code == 403 or response.status_code != 200:
-                logger.warning(f"BRAPCI API v5 retornou status {response.status_code}. Tentando endpoint fallback v1...")
+                body_preview = response.text[:250].replace("\n", " ").strip()
+                headers_summary = f"Server={response.headers.get('Server', 'N/A')}, Content-Type={response.headers.get('Content-Type', 'N/A')}"
+                self.log(
+                    f"AVISO: API v5 retornou Status {response.status_code} ({response.reason}). Headers: [{headers_summary}]. Resposta: {body_preview}",
+                    level="WARNING"
+                )
+                self.log("Tentando endpoint alternativo fallback API v1...")
+                
                 v1_url = "https://cip.brapci.inf.br/api/brapci/search/v1"
                 v1_params = {
                     "q": query.strip(),
                     "offset": str(target_limit)
                 }
+                self.log(f"Requisitando API v1: {v1_url} com params: {v1_params}")
                 response = session.get(v1_url, params=v1_params, timeout=DEFAULT_TIMEOUT)
 
             if response.status_code != 200:
-                logger.warning(f"BRAPCI API retornou status {response.status_code}.")
+                body_err = response.text[:250].replace("\n", " ").strip()
+                self.log(f"ERRO: BRAPCI API retornou status HTTP {response.status_code} ({response.reason}). Resposta: {body_err}", level="ERROR")
+                self.last_status = f"Erro HTTP {response.status_code}"
                 return []
 
-            payload = response.json()
+            try:
+                payload = response.json()
+            except Exception as e_json:
+                body_raw = response.text[:250].replace("\n", " ").strip()
+                self.log(f"ERRO: Resposta não pôde ser decodificada como JSON: {e_json}. Conteúdo: {body_raw}", level="ERROR")
+                self.last_status = "Erro JSON"
+                return []
+
             if not isinstance(payload, dict):
+                self.log(f"ERRO: Payload retornado não é um objeto JSON válido (tipo {type(payload)}).", level="ERROR")
+                self.last_status = "Formato inválido"
                 return []
 
             works = payload.get("works", [])
+            total_reported = payload.get("total", len(works))
+            self.log(f"Resposta recebida com sucesso: total reportado {total_reported}, artigos na lista: {len(works)}")
+
             for work in works[:target_limit]:
                 data = work.get("data", {})
                 work_id = str(work.get("id") or data.get("ID", "")).strip()
@@ -159,7 +187,17 @@ class BrapciScraper(BaseScraper):
                 )
                 records.append(record.to_dict())
 
+            self.last_status = f"Sucesso: {len(records)} registros"
+            self.log(f"Processamento concluído: {len(records)} artigos catalogados.")
+
+        except requests.exceptions.Timeout:
+            self.log(f"ERRO: Timeout excedido ({DEFAULT_TIMEOUT}s) ao consultar servidor da BRAPCI.", level="ERROR")
+            self.last_status = "Timeout"
+        except requests.exceptions.ConnectionError as e_conn:
+            self.log(f"ERRO: Falha de conexão de rede com BRAPCI: {e_conn}", level="ERROR")
+            self.last_status = "Erro de Conexão"
         except Exception as e:
-            logger.error(f"Erro ao consultar BRAPCI: {e}")
+            self.log(f"ERRO inesperado ao consultar BRAPCI: {type(e).__name__}: {e}", level="ERROR")
+            self.last_status = f"Erro {type(e).__name__}"
 
         return records

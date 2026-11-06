@@ -3,6 +3,10 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, asdict
 import pandas as pd
 
+import logging
+
+logger = logging.getLogger("AcademicOmniSearch")
+
 @dataclass
 class AcademicRecord:
     """
@@ -46,6 +50,21 @@ class BaseScraper(ABC):
         self.name = name
         self.is_api = is_api
         self.requires_auth = requires_auth
+        self.last_status: str = "Pronto"
+        self.logs: List[str] = []
+
+    def log(self, message: str, level: str = "INFO") -> None:
+        """Registra logs simultaneamente no logger do Python e na memória para exibição na UI."""
+        formatted = f"[{self.name}] {message}"
+        self.logs.append(formatted)
+        
+        lvl = level.upper()
+        if lvl == "WARNING":
+            logger.warning(formatted)
+        elif lvl == "ERROR":
+            logger.error(formatted)
+        else:
+            logger.info(formatted)
 
     @abstractmethod
     def search(
