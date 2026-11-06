@@ -80,14 +80,28 @@ class BrapciScraper(BaseScraper):
         session = requests.Session()
         session.headers.update(DEFAULT_HEADERS)
         session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
             "Referer": "https://brapci.inf.br/",
             "Origin": "https://brapci.inf.br",
+            "Sec-Ch-Ua": '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "same-site",
         })
+
+        # Inicialização suave de sessão na raiz da CIP para adquirir o cookie 'ci_session'
+        try:
+            session.get("https://cip.brapci.inf.br/", timeout=5)
+        except Exception:
+            pass
 
         params = {
             "term": query.strip(),
@@ -103,11 +117,15 @@ class BrapciScraper(BaseScraper):
         try:
             response = session.get(self.BASE_URL, params=params, timeout=DEFAULT_TIMEOUT)
             
-            # Se a resposta foi 403, tenta com fallback suave estabelecendo sessão
-            if response.status_code == 403:
-                logger.warning(f"BRAPCI API retornou status 403. Tentando autenticação de sessão inicial...")
-                session.get("https://brapci.inf.br/", timeout=5)
-                response = session.get(self.BASE_URL, params=params, timeout=DEFAULT_TIMEOUT)
+            # Se a API v5 retornar 403 ou erro de WAF, executa fallback para a API v1 da CIP
+            if response.status_code == 403 or response.status_code != 200:
+                logger.warning(f"BRAPCI API v5 retornou status {response.status_code}. Tentando endpoint fallback v1...")
+                v1_url = "https://cip.brapci.inf.br/api/brapci/search/v1"
+                v1_params = {
+                    "q": query.strip(),
+                    "offset": str(target_limit)
+                }
+                response = session.get(v1_url, params=v1_params, timeout=DEFAULT_TIMEOUT)
 
             if response.status_code != 200:
                 logger.warning(f"BRAPCI API retornou status {response.status_code}.")
