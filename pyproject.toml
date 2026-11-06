@@ -1,0 +1,16 @@
+[project]
+name = "academicomnisearch"
+version = "0.1.0"
+description = "Coletor automatizado e extrator de metadados para produção científica em larga escala com interface web interativa."
+readme = "README.md"
+authors = [
+    { name = "Bernardo", email = "Bernardonogueira8@hotmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "openpyxl>=3.1.2",
+    "pandas>=3.1.1",
+    "requests>=2.34.2",
+    "streamlit>=1.67.0",
+]
