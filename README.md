@@ -4,6 +4,7 @@ O **AcademicOmniSearch** é uma ferramenta de _Data Extraction_ e _Web Scraping_
 
 Inspirado na arquitetura do protótipo **ScraperCI**, o projeto expande a capacidade de busca para além da BRAPCI, integrando mecanismos modulares de automação de consultas às principais bases de dados nacionais e internacionais:
 
+- **Periódicos CAPES** (Multidisciplinar / MEC-CAPES com Qualis & OpenAlex) _Funcionando_
 - **PubMed** (Ciências da Saúde e Biomedicina) _Funcionando_
 - **BRAPCI** (Ciência da Informação) _Em Andamento_
 - **ACM Digital Library** (Ciência da Computação) _Em Andamento_
@@ -14,42 +15,63 @@ Inspirado na arquitetura do protótipo **ScraperCI**, o projeto expande a capaci
 
 ## 🚀 Funcionalidades
 
-- **Seleção Multi-Base:** Seleção modular via dashboard para consultar uma ou múltiplas bases simultaneamente.
+- **Nova Interface Moderna (v2.0):** Dashboard SPA reativo construído em **React + Tailwind CSS** inspirado na estética **Resend** (dark-first OLED, alta performance, tipografia refinada e microinterações).
+- **Orquestrador de Alta Vazão (FastAPI):** Backend assíncrono com streaming em tempo real via **Server-Sent Events (SSE)** para acompanhamento base a base, logs ao vivo e cancelamento sob demanda.
+- **Seleção Multi-Base:** Seleção modular via dashboard para consultar uma ou múltiplas bases simultaneamente (CAPES, PubMed, BRAPCI, ACM, IEEE, Scopus).
 - **Parametrização Flexível:** Busca por palavras-chave, título, autores, resumo ou texto completo.
 - **Recorte Temporal:** Definição de janelas de tempo personalizadas (ano inicial e final).
+- **Enriquecimento Cienciométrico:** Classificação Qualis (via SQLite local) e métricas de impacto/citação OpenAlex (FWCI e citações totais).
 - **Deduplicação Inteligente:** Remoção automática de títulos duplicados entre bases distintas.
-- **Exportação Padronizada:** Download direto dos metadados extraídos em arquivo `.xlsx`.
-- **Interface Interativa:** Dashboard web responsivo construído em Streamlit com métricas agregadas da busca.
+- **Exportação Bibliográfica Completa:** Download com 1 clique nos formatos **Excel (.xlsx)**, **RIS (.ris)** para Zotero/Mendeley, **BibTeX (.bib)** para LaTeX e **CSV (.csv)**.
+- **Terminal de Execução Integrado:** Drawer de logs ao vivo com níveis de severidade, cópia rápida e diagnósticos detalhados.
 
 
 ## 🛠️ Tecnologias Utilizadas
 
-- **Linguagem:** Python (>= 3.10)
-- **Gerenciador de Pacotes:** [uv](https://docs.astral.sh/uv/) / pip
-- **Interface Web:** [Streamlit](https://streamlit.io/)
-- **Extração & Requisições:** Requests, BeautifulSoup4
-- **Manipulação de Dados:** Pandas
+- **Backend:** Python (>= 3.12 / 3.14), [FastAPI](https://fastapi.tiangolo.com/), [Uvicorn](https://www.uvicorn.org/)
+- **Frontend Moderno:** [React 19](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS v4](https://tailwindcss.com/), [Lucide React](https://lucide.dev/) (Design System Resend)
+- **Gerenciador de Pacotes:** [uv](https://docs.astral.sh/uv/) / pip e npm
+- **Extração & Requisições:** Requests, BeautifulSoup4, SSE (Server-Sent Events)
+- **Manipulação de Dados:** Pandas, OpenPyXL, SQLite (Qualis)
 
 ## 📂 Estrutura do Repositório
 
 ```text
 AcademicOmniSearch/
+├── frontend/                     # Aplicação SPA moderna (React + Tailwind v4 + Vite)
+│   ├── src/
+│   │   ├── components/           # Componentes (Navbar, SearchBar, ResultsTable, etc.)
+│   │   ├── types.ts              # Definições TypeScript
+│   │   ├── App.tsx               # Componente principal com streaming SSE
+│   │   └── index.css             # Design System Resend (Dark OLED)
+│   ├── dist/                     # Build de produção servido pelo FastAPI
+│   └── package.json
 ├── src/
-│   ├── __init__.py           # Exportação e registro dos scrapers
-│   ├── base.py               # Classe base abstrata e Dataclass AcademicRecord
-│   ├── brapci_scraper.py     # Cliente oficial da API REST v5 da BRAPCI
-│   ├── pubmed_scraper.py     # Cliente oficial da API NCBI E-utilities (PubMed)
-│   ├── acm_scraper.py        # Parser HTML & cliente com tratamento de WAF para ACM
-│   ├── ieee_scraper.py       # Integração com IEEE Xplore Search API
-│   └── scopus_scraper.py     # Integração com Elsevier Scopus API
+│   ├── __init__.py               # Exportação e registro dos scrapers
+│   ├── base.py                   # Classe base abstrata e Dataclass AcademicRecord
+│   ├── capes_scraper.py          # Extrator do Portal CAPES com WAF bypass e enriquecimento
+│   ├── qualis_service.py         # Consulta de classificação Qualis em SQLite local
+│   ├── openalex_service.py       # Integração com API OpenAlex para citações e FWCI
+│   ├── brapci_scraper.py         # Cliente oficial da API REST v5 da BRAPCI
+│   ├── pubmed_scraper.py         # Cliente oficial da API NCBI E-utilities (PubMed)
+│   ├── acm_scraper.py            # Parser HTML & cliente com tratamento de WAF para ACM
+│   ├── ieee_scraper.py           # Integração com IEEE Xplore Search API
+│   └── scopus_scraper.py         # Integração com Elsevier Scopus API
+├── data/
+│   └── qualis.db                 # Banco local de estratos Qualis da CAPES
 ├── utils/
-│   ├── __init__.py           # Exportação dos utilitários
-│   ├── config.py             # Configurações globais, headers e colunas padrão
-│   └── data_export.py        # Normalização de schemas, métricas e exportação Excel (.xlsx)
+│   ├── __init__.py               # Exportação dos utilitários
+│   ├── config.py                 # Carregamento de .env, headers e constantes
+│   ├── data_export.py            # Normalização de schemas e exportação Excel (.xlsx) / CSV
+│   └── bibliographic_exporter.py # Exportação para formatos bibliográficos RIS e BibTeX
 ├── docs/
-│   └── API.md                # Template e especificações completas das APIs
-├── app.py                    # Aplicação Streamlit com orquestração multi-base
-├── pyproject.toml            # Especificação de dependências do projeto
+│   └── API.md                    # Template e especificações completas das APIs
+├── main.py                       # Servidor unificado (FastAPI + SPA compilada)
+├── server.py                     # API REST e endpoints SSE do FastAPI
+├── app.py                        # Interface legado em Streamlit
+├── pyproject.toml                # Especificação de dependências do projeto
+├── .env                          # Variáveis de ambiente e chaves de API
+├── .env.example                  # Modelo de variáveis de ambiente
 ├── .gitignore
 └── README.md
 ```
@@ -58,53 +80,55 @@ AcademicOmniSearch/
 
 ## ⚙️ Pré-requisitos e Instalação
 
-### Opção 1: Usando `uv` (Recomendado - Ultra Rápido)
-
 ```bash
-# Clone o repositório
+# 1. Clone o repositório
 git clone https://github.com/bernardonogueira8/AcademicOmniSearch.git
 cd AcademicOmniSearch
 
-# Instale o ambiente e sincronize as dependências
+# 2. Configure suas variáveis de ambiente
+cp .env.example .env
+
+# 3. Instale as dependências via uv (recomendado) ou pip
 uv sync
-
-# Execute o aplicativo Streamlit via uv
-uv run streamlit run app.py
 ```
 
-### Opção 2: Usando `pip` tradicional e ambiente virtual
-
-```bash
-# Clone o repositório
-git clone https://github.com/bernardonogueira8/AcademicOmniSearch.git
-cd AcademicOmniSearch
-
-# Crie e ative o ambiente virtual
-python -m venv venv
-
-# Windows
-.\venv\Scripts\activate
-
-# Linux / macOS
-source venv/bin/activate
-
-# Instale o projeto
-pip install .
-
-# Execute o Streamlit
-streamlit run app.py
-```
+---
 
 ## 🖥️ Como Executar
 
-A partir da raiz do projeto, execute:
+### Opção Recomendada: Servidor Unificado (Modern Web App)
 
+Basta executar um único comando na raiz do projeto:
+
+```bash
+python main.py
+# ou via uv:
+uv run python main.py
+```
+
+O servidor unificado irá verificar o frontend compilado (gerando automaticamente se necessário) e disponibilizar a aplicação em:
+- **Interface Web Moderna:** `http://localhost:8000`
+- **Documentação Interativa Swagger:** `http://localhost:8000/docs`
+
+### Desenvolvimento com Hot-Reload (Opcional)
+
+Se desejar desenvolver o frontend com Vite HMR:
+```bash
+# Terminal 1 - Backend FastAPI
+uv run uvicorn server:app --reload --port 8000
+
+# Terminal 2 - Frontend Vite
+cd frontend
+npm run dev
+# Acesse http://localhost:5173
+```
+
+### Interface Legado (Streamlit)
+
+Caso deseje executar o painel anterior do Streamlit:
 ```bash
 streamlit run app.py
 ```
-
-Acesse localmente em seu navegador:
-`http://localhost:8501`
 
 
 ## 📊 Estrutura dos Dados Gerados

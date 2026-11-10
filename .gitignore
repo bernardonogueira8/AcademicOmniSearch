@@ -15,6 +15,14 @@ ENV/
 .env
 *.env.local
 
+# Node / Frontend
+frontend/node_modules/
+frontend/.oxc/
+
+# SQLite databases & search histories
+data/research.db
+*.db-journal
+
 # Temporary downloads & exports
 *.csv
 *.xlsx

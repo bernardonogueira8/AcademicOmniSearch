@@ -16,16 +16,21 @@ __all__ = [
 ]
 
 
-def normalize_dataframe(records: List[Dict[str, Any]], keep_extended: bool = True) -> pd.DataFrame:
+def normalize_dataframe(records: Any, keep_extended: bool = True) -> pd.DataFrame:
     """
-    Normaliza uma lista de registros brutos em um DataFrame padronizado.
+    Normaliza uma lista de registros brutos ou DataFrame em um DataFrame padronizado.
     Garante a presença das colunas obrigatórias na ordem especificada no README.
     """
-    if not records:
-        cols = EXTENDED_COLUMNS if keep_extended else STANDARD_COLUMNS
-        return pd.DataFrame(columns=cols)
+    cols = EXTENDED_COLUMNS if keep_extended else STANDARD_COLUMNS
 
-    df = pd.DataFrame(records)
+    if isinstance(records, pd.DataFrame):
+        if records.empty:
+            return pd.DataFrame(columns=cols)
+        df = records.copy()
+    else:
+        if not records:
+            return pd.DataFrame(columns=cols)
+        df = pd.DataFrame(records)
 
     # Garante a existência de todas as colunas padrão
     target_columns = EXTENDED_COLUMNS if keep_extended else STANDARD_COLUMNS

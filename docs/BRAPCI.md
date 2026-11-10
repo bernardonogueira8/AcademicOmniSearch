@@ -105,3 +105,4 @@ print(f"Total encontrado: {data.get('total')}, Recuperados: {len(works)}")
 - `Base` <- `"BRAPCI"`
 - `Palavras-Chave` <- `data.get('KEYWORDS', '')`
 - `ID Origem` <- `str(work_id)`
+

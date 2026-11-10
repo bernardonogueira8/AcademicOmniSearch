@@ -4,6 +4,7 @@ Utiliza a API oficial gratuita NCBI E-utilities (esearch e esummary).
 """
 
 from typing import List, Dict, Any, Optional
+import os
 import requests
 import re
 import time
@@ -39,10 +40,10 @@ class PubmedScraper(BaseScraper):
         "text": "[Text Word]"
     }
 
-    def __init__(self, email: str = "academicomnisearch@dev.local", api_key: Optional[str] = None):
+    def __init__(self, email: Optional[str] = None, api_key: Optional[str] = None):
         super().__init__(name="PubMed", is_api=True, requires_auth=False)
-        self.email = email
-        self.api_key = api_key
+        self.email = email or os.getenv("PUBMED_EMAIL", "academicomnisearch@dev.local")
+        self.api_key = api_key or os.getenv("NCBI_API_KEY", "")
 
     def _build_query_term(self, query: str, field: str, year_start: int, year_end: int) -> str:
         """Monta a query formatada com qualificadores do PubMed e janela de anos."""

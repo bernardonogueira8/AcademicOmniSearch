@@ -42,14 +42,82 @@ class AcmScraper(BaseScraper):
 
     def __init__(self, local_html_path: Optional[str] = None):
         super().__init__(name="ACM Digital Library", is_api=False, requires_auth=False)
-        if local_html_path:
-            self.local_html_path = local_html_path
-        elif os.path.exists("test/app.html"):
-            self.local_html_path = "test/app.html"
-        elif os.path.exists("app.html"):
-            self.local_html_path = "app.html"
-        else:
-            self.local_html_path = None
+        self.local_html_path = local_html_path
+
+    def _fetch_via_crossref(
+        self, query: str, year_start: int, year_end: int, max_results: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Bypass automatizado e oficial do WAF da ACM Digital Library.
+        Consulta o índice CrossRef filtrando especificamente pelo prefixo DOI oficial da ACM (10.1145).
+        Retorna registros em tempo real sem sofrer bloqueios do Cloudflare Turnstile.
+        """
+        self.log(f"Consultando índice oficial CrossRef para ACM (prefix: 10.1145) com '{query}'...")
+        url = "https://api.crossref.org/works"
+        params = {
+            "query": query,
+            "filter": f"prefix:10.1145,from-pub-date:{year_start}-01-01,until-pub-date:{year_end}-12-31",
+            "rows": min(max_results, 100),
+            "mailto": "academic.researcher@omnisearch.org"
+        }
+
+        try:
+            resp = requests.get(url, params=params, headers=DEFAULT_HEADERS, timeout=DEFAULT_TIMEOUT)
+            if resp.status_code != 200:
+                self.log(f"Falha na consulta CrossRef ACM: HTTP {resp.status_code}", level="WARNING")
+                return []
+
+            data = resp.json()
+            items = data.get("message", {}).get("items", [])
+            records: List[Dict[str, Any]] = []
+
+            for it in items:
+                title = (it.get("title") or ["Sem título"])[0]
+                doi = it.get("DOI", "")
+                link = it.get("URL") or (f"https://doi.org/{doi}" if doi else f"https://dl.acm.org/doi/{doi}")
+                
+                # Autores
+                authors_raw = it.get("author", [])
+                authors_list = [f"{a.get('given', '')} {a.get('family', '')}".strip() for a in authors_raw if a.get("family")]
+                autor = "; ".join(authors_list) if authors_list else "Autor não informado"
+
+                # Revista / Proceedings
+                venue_raw = it.get("container-title") or ["ACM Digital Library"]
+                source = venue_raw[0] if venue_raw else "ACM Digital Library"
+
+                # Ano
+                date_parts = (
+                    it.get("published-print", {}).get("date-parts", [[None]])[0][0]
+                    or it.get("published-online", {}).get("date-parts", [[None]])[0][0]
+                    or it.get("created", {}).get("date-parts", [[None]])[0][0]
+                )
+                ano = str(date_parts) if date_parts else "Não informado"
+
+                # Resumo
+                abstract_raw = it.get("abstract", "")
+                resumo = re.sub(r"<[^>]+>", "", abstract_raw).strip() if abstract_raw else ""
+
+                record = AcademicRecord(
+                    title=title.strip(),
+                    link_pub=link.strip(),
+                    autor=autor.strip(),
+                    revista_fonte=source.strip(),
+                    ano=ano.strip(),
+                    base=self.name,
+                    resumo=resumo,
+                    doi=doi,
+                    id_origem=doi or link
+                )
+                records.append(record.to_dict())
+
+                if len(records) >= max_results:
+                    break
+
+            self.log(f"CrossRef ACM retornou {len(records)} artigos publicados pela ACM.")
+            return records
+        except Exception as e:
+            self.log(f"Erro ao consultar CrossRef para ACM: {e}", level="ERROR")
+            return []
 
     def parse_html(self, html_content: str, max_results: int = 50) -> List[Dict[str, Any]]:
         """
@@ -205,22 +273,36 @@ class AcmScraper(BaseScraper):
                     f"AVISO: Proteção WAF/Cloudflare detectada (HTTP {response.status_code}). Servidor bloqueou requisição automatizada direta.",
                     level="WARNING"
                 )
-                if use_local_file_if_blocked and self.local_html_path and os.path.exists(self.local_html_path):
+                if self.local_html_path and os.path.exists(self.local_html_path):
                     self.log(f"Recorrendo ao arquivo HTML de dump local: '{self.local_html_path}'...")
                     results = self.parse_file(self.local_html_path, max_results=max_results)
                     self.last_status = f"Fallback Local: {len(results)} registros"
                     return results
-                else:
-                    self.last_status = f"Bloqueio WAF (HTTP {response.status_code})"
-                    self.log("Sem dump HTML local configurado para ACM.", level="WARNING")
-                
+
+                # Bypass automatizado via CrossRef ACM Indexer (prefix: 10.1145)
+                self.log("Ativando bypass automático via índice oficial CrossRef ACM (prefix 10.1145)...")
+                results = self._fetch_via_crossref(query=query, year_start=year_start, year_end=year_end, max_results=max_results)
+                if results:
+                    self.last_status = f"Bypass CrossRef: {len(results)} registros"
+                    return results
+
+                self.last_status = f"Bloqueio WAF (HTTP {response.status_code})"
+                return []
+
             return []
 
         except Exception as e:
             self.log(f"ERRO ao consultar ACM: {type(e).__name__}: {e}", level="ERROR")
-            if use_local_file_if_blocked and self.local_html_path and os.path.exists(self.local_html_path):
+            if self.local_html_path and os.path.exists(self.local_html_path):
                 self.log(f"Recorrendo ao arquivo local: {self.local_html_path}")
                 return self.parse_file(self.local_html_path, max_results=max_results)
+
+            self.log("Tentando recuperação automática via CrossRef ACM...")
+            results = self._fetch_via_crossref(query=query, year_start=year_start, year_end=year_end, max_results=max_results)
+            if results:
+                self.last_status = f"Bypass CrossRef: {len(results)} registros"
+                return results
+
             self.last_status = f"Erro {type(e).__name__}"
             return []
 

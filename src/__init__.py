@@ -4,6 +4,9 @@ from src.pubmed_scraper import PubmedScraper
 from src.acm_scraper import AcmScraper
 from src.ieee_scraper import IeeeScraper
 from src.scopus_scraper import ScopusScraper
+from src.capes_scraper import CapesScraper
+from src.qualis_service import QualisService
+from src.openalex_service import OpenAlexService
 
 __all__ = [
     "BaseScraper",
@@ -13,4 +16,7 @@ __all__ = [
     "AcmScraper",
     "IeeeScraper",
     "ScopusScraper",
+    "CapesScraper",
+    "QualisService",
+    "OpenAlexService",
 ]

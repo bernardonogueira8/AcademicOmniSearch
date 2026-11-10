@@ -3,6 +3,7 @@ AcademicOmniSearch: Multi-Database Academic Harvester
 Interface com design system inspirado na Resend (dark-first, artesanal, minimalista).
 """
 
+import os
 import streamlit as st
 import pandas as pd
 import time
@@ -21,7 +22,8 @@ from src import (
     PubmedScraper,
     AcmScraper,
     IeeeScraper,
-    ScopusScraper
+    ScopusScraper,
+    CapesScraper
 )
 from utils.data_export import (
     normalize_dataframe,
@@ -29,6 +31,7 @@ from utils.data_export import (
     remove_duplicates,
     get_summary_metrics
 )
+from utils.bibliographic_exporter import BibliographicExporter
 from utils.config import STANDARD_COLUMNS
 
 # --- Configuração da Página ---
@@ -128,6 +131,7 @@ termo_busca = st.text_input(
 with st.container():  
     # Linha A: Seleção de Bases de Dados
     available_bases = {
+        "Periódicos CAPES (MEC/CAPES)": "capes",
         "BRAPCI (Ciência da Informação)": "brapci",
         "PubMed (Saúde & Biomédica)": "pubmed",
         "ACM Digital Library (Computação)": "acm",
@@ -139,6 +143,7 @@ with st.container():
         "Bases de Dados Alvo",
         options=list(available_bases.keys()),
         default=[
+            "Periódicos CAPES (MEC/CAPES)",
             "BRAPCI (Ciência da Informação)",
             "PubMed (Saúde & Biomédica)"
         ],
@@ -202,15 +207,26 @@ def executar_busca_multibase(
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    # Verificação de proxy opcional em st.secrets
+    # Verificação de proxy e Zyte API em st.secrets ou variáveis de ambiente
     proxy_val = None
+    zyte_key = None
     try:
-        proxy_val = st.secrets.get("BRAPCI_PROXY")
+        proxy_val = st.secrets.get("BRAPCI_PROXY") or st.secrets.get("CAPES_PROXY")
     except Exception:
         pass
+    if not proxy_val:
+        proxy_val = os.getenv("CAPES_PROXY") or os.getenv("BRAPCI_PROXY")
 
-    # Instanciação dos scrapers com passagem do max_por_base para o brapci
+    try:
+        zyte_key = st.secrets.get("ZYTE_API_KEY")
+    except Exception:
+        pass
+    if not zyte_key:
+        zyte_key = os.getenv("ZYTE_API_KEY")
+
+    # Instanciação dos scrapers com passagem do max_por_base para os coletores
     scrapers_map = {
+        "capes": CapesScraper(max_por_base=max_reg, zyte_api_key=zyte_key, proxy=proxy_val),
         "brapci": BrapciScraper(max_por_base=max_reg, proxy=proxy_val),
         "pubmed": PubmedScraper(),
         "acm": AcmScraper(local_html_path="test/app.html"),
@@ -323,8 +339,8 @@ if "dataset" in st.session_state:
             unsafe_allow_html=True
         )
 
-        # Barra de Ações: Filtro Dinâmico + Download Excel
-        col_filtro, col_down_xlsx = st.columns([3.8, 1.2])
+        # Barra de Ações: Filtro Dinâmico + Downloads (Excel, RIS, BibTeX)
+        col_filtro, col_down_xlsx, col_down_ris, col_down_bib = st.columns([2.2, 1.1, 0.9, 0.9])
         
         with col_filtro:
             filtro_tabela = st.text_input(
@@ -338,11 +354,33 @@ if "dataset" in st.session_state:
         with col_down_xlsx:
             excel_bytes = export_to_excel(df_atual, name_table=nome_arquivo[:31])
             st.download_button(
-                label="📥 Baixar Excel (.xlsx)",
+                label="📥 Excel (.xlsx)",
                 data=excel_bytes,
                 file_name=f"metadata_{nome_arquivo}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 width="stretch"
+            )
+
+        with col_down_ris:
+            ris_text = BibliographicExporter.to_ris(df_atual.to_dict(orient="records"))
+            st.download_button(
+                label="📥 RIS (.ris)",
+                data=ris_text.encode("utf-8"),
+                file_name=f"export_{nome_arquivo}.ris",
+                mime="application/x-research-info-systems",
+                width="stretch",
+                help="Formato compatível com Zotero, Mendeley e EndNote."
+            )
+
+        with col_down_bib:
+            bib_text = BibliographicExporter.to_bibtex(df_atual.to_dict(orient="records"))
+            st.download_button(
+                label="📥 BibTeX (.bib)",
+                data=bib_text.encode("utf-8"),
+                file_name=f"export_{nome_arquivo}.bib",
+                mime="application/x-bibtex",
+                width="stretch",
+                help="Formato compatível com LaTeX e Overleaf."
             )
 
         
@@ -373,7 +411,11 @@ if "dataset" in st.session_state:
                 "Autor": st.column_config.TextColumn("Autor(es)", width="medium"),
                 "Revista / Fonte": st.column_config.TextColumn("Revista / Fonte", width="medium"),
                 "Ano": st.column_config.TextColumn("Ano", width="small"),
-                "Base": st.column_config.TextColumn("Base", width="small")
+                "Base": st.column_config.TextColumn("Base", width="small"),
+                "Qualis": st.column_config.TextColumn("Qualis", width="small"),
+                "Citações (OpenAlex)": st.column_config.NumberColumn("Citações", width="small"),
+                "FWCI": st.column_config.NumberColumn("FWCI", format="%.2f", width="small"),
+                "ISSN": st.column_config.TextColumn("ISSN", width="small")
             }
         )
 
